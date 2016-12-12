@@ -1,3 +1,15 @@
+/*Fast Geocoder
+ * Provides a simple interface to geocode ip addresses
+ * The application works on 3 ways: entity based via console, file based via console, http server
+ * Entity based via console:
+ * 		You call the executable passing a single param, the ip address you want to geocode
+ *		the response will be on stdout, a json formatted of the latitude, longitude, country and timezone
+ * File based via console:
+ *		You call the executable passing a single param: the path of a csv file containing on each line a IP address
+ *		the response will follow the idea of the single param. For each line, you'll receive the above mentioned formatted response on the stdout
+ * Http server:
+ *		Calling the executable passing a flag, a server will run and receive calls on the geocode endpoint and return a json response on the same format above mentioned
+ */
 package main
 
 import (
@@ -11,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"flag"
 
@@ -21,7 +34,8 @@ import (
 var isServer bool
 var port int
 var file db.Reader
-var record struct {
+
+type record struct {
 	Location struct {
 		AccuracyRadius uint16  `maxminddb:"accuracy_radius"`
 		Latitude       float64 `maxminddb:"latitude"`
@@ -75,21 +89,30 @@ func main() {
 		}
 	} else {
 		r := router.New()
+		r.Handle("GET", "/", defaultHandler)
 		r.GET("/geocode/:ip", geocodeHandler)
+		fmt.Printf("Running the server on http://localhost:%v\n", port)
 		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), r))
 	}
 
 }
 
+func defaultHandler(w http.ResponseWriter, r *http.Request, ps router.Params) {
+	fmt.Fprint(w, "Fast Geocoder")
+}
+
 func geocodeHandler(w http.ResponseWriter, r *http.Request, ps router.Params) {
+	s := time.Now()
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, string(geocode(ps.ByName("ip"))))
+	log.Printf(" - GET %v - total=%v", r.RequestURI, time.Since(s))
 }
 
 func geocode(ips string) []byte {
+	var locRecord record
 	ip := net.ParseIP(ips)
-	_ = file.Lookup(ip, &record)
-	res := Response{record.Location.Latitude, record.Location.Longitude, record.Country.IsoCode, record.Location.TimeZone}
+	_ = file.Lookup(ip, &locRecord)
+	res := Response{locRecord.Location.Latitude, locRecord.Location.Longitude, locRecord.Country.IsoCode, locRecord.Location.TimeZone}
 	j, _ := json.Marshal(res)
 	return j
 }
