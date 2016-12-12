@@ -20,7 +20,6 @@ import (
 
 var isServer bool
 var port int
-
 var file db.Reader
 var record struct {
 	Location struct {
@@ -48,17 +47,14 @@ type Response struct {
 func main() {
 
 	initialize()
-
-	file := loadFile(&file)
-	defer file.Close()
+	loadFile()
 
 	if !isServer {
 		argument := os.Args[1]
 		var j []byte
 
 		if _, err := os.Stat(argument); err != nil {
-			geocode(argument)
-			j = net.ParseIP(argument)
+			j = geocode(argument)
 			fmt.Println(string(j[:]))
 		} else {
 			// Is a file, consider is a CSV, one ip per line
@@ -105,8 +101,8 @@ func initialize() {
 	flag.Parse()
 }
 
-func loadFile(file *db.Reader) db.Reader {
-	file, err := db.Open("/tmp/maxmind.mmdb")
+func loadFile() {
+	tfile, err := db.Open("/tmp/maxmind.mmdb")
 	if err != nil {
 		if _, err := os.Stat("/tmp/maxmind.mmdb"); err != nil {
 			fmt.Println("Database file not present\nDownloading file to \"/tmp/maxmind.mmdb\" (one time operation, unless file is removed)")
@@ -123,10 +119,10 @@ func loadFile(file *db.Reader) db.Reader {
 				err = nil
 			}
 		}
-		file, err = db.Open("/tmp/maxmind.mmdb")
+		tfile, err = db.Open("/tmp/maxmind.mmdb")
 		if err != nil {
 			panic(err)
 		}
 	}
-	return *file
+	file = *tfile
 }
