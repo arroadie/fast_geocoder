@@ -7,9 +7,9 @@ Small script to geocode IP's using maxmind free database
 _requires go_
 
 Clone the repo and build with
- go build
+ [go build](https://golang.org/pkg/go/build/)
 
-Or just download the compiled binary in the mac or linux folder (no windows so far)
+Or just download the compiled binary for mac or linux in the bin folder (no windows yet, so _contribute_)
 
 ## Contribution
 
