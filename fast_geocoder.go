@@ -7,12 +7,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
 
+	"flag"
+
+	router "github.com/julienschmidt/httprouter"
 	db "github.com/oschwald/maxminddb-golang"
 )
+
+var isServer bool
+var port int
 
 var file db.Reader
 var record struct {
@@ -30,6 +37,7 @@ var record struct {
 	} `maxminddb:"country"`
 }
 
+//Response Is the default response type for marshalling
 type Response struct {
 	Lat      float64 `json:"lat"`
 	Lng      float64 `json:"lng"`
@@ -39,38 +47,62 @@ type Response struct {
 
 func main() {
 
+	initialize()
+
 	file := loadFile(&file)
 	defer file.Close()
 
-	argument := os.Args[1]
+	if !isServer {
+		argument := os.Args[1]
+		var j []byte
 
-	if _, err := os.Stat(argument); err != nil {
-		ip := net.ParseIP(argument)
-		_ = file.Lookup(ip, &record)
-		res := Response{record.Location.Latitude, record.Location.Longitude, record.Country.IsoCode, record.Location.TimeZone}
-		j, _ := json.Marshal(res)
-		fmt.Println(string(j[:]))
-	} else {
-		// Is a file, consider is a CSV, one ip per line
-		ipsfile, err := os.Open(argument)
-		if err != nil {
-			panic(err)
-		}
-		r := csv.NewReader(bufio.NewReader(ipsfile))
-		for {
-			elements, err := r.Read()
-			if err != nil {
-				break
-			}
-			ip := net.ParseIP(elements[0])
-			_ = file.Lookup(ip, &record)
-			res := Response{record.Location.Latitude, record.Location.Longitude, record.Country.IsoCode, record.Location.TimeZone}
-			j, _ := json.Marshal(res)
+		if _, err := os.Stat(argument); err != nil {
+			geocode(argument)
+			j = net.ParseIP(argument)
 			fmt.Println(string(j[:]))
-		}
+		} else {
+			// Is a file, consider is a CSV, one ip per line
+			ipsfile, err := os.Open(argument)
+			if err != nil {
+				panic(err)
+			}
+			r := csv.NewReader(bufio.NewReader(ipsfile))
+			for {
+				elements, err := r.Read()
+				if err != nil {
+					break
+				}
+				j = geocode(elements[0])
+				fmt.Println(string(j[:]))
+			}
 
+		}
+	} else {
+		r := router.New()
+		r.GET("/geocode/:ip", geocodeHandler)
+		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), r))
 	}
 
+}
+
+func geocodeHandler(w http.ResponseWriter, r *http.Request, ps router.Params) {
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, string(geocode(ps.ByName("ip"))))
+}
+
+func geocode(ips string) []byte {
+	ip := net.ParseIP(ips)
+	_ = file.Lookup(ip, &record)
+	res := Response{record.Location.Latitude, record.Location.Longitude, record.Country.IsoCode, record.Location.TimeZone}
+	j, _ := json.Marshal(res)
+	return j
+}
+
+func initialize() {
+	flag.BoolVar(&isServer, "server", false, "Starts a server that can be used to geocode ip's on demand")
+	flag.IntVar(&port, "port", 8080, "Network port where the server should be running on")
+
+	flag.Parse()
 }
 
 func loadFile(file *db.Reader) db.Reader {
