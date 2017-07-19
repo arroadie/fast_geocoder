@@ -64,11 +64,14 @@ func main() {
 	loadFile()
 
 	if !isServer {
+		if len(os.Args) < 2 {
+			log.Fatal("You need to pass at least one ip to be geocoded")
+		}
 		argument := os.Args[1]
 		var j []byte
 
 		if _, err := os.Stat(argument); err != nil {
-			j = geocode(argument)
+			geocode(argument, os.Stdout)
 			fmt.Println(string(j[:]))
 		} else {
 			// Is a file, consider is a CSV, one ip per line
@@ -82,7 +85,7 @@ func main() {
 				if err != nil {
 					break
 				}
-				j = geocode(elements[0])
+				geocode(elements[0], os.Stdout)
 				fmt.Println(string(j[:]))
 			}
 
@@ -102,19 +105,28 @@ func defaultHandler(w http.ResponseWriter, r *http.Request, ps router.Params) {
 }
 
 func geocodeHandler(w http.ResponseWriter, r *http.Request, ps router.Params) {
-	s := time.Now()
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, string(geocode(ps.ByName("ip"))))
-	log.Printf(" - GET %v - total=%v", r.RequestURI, time.Since(s))
+	go geocode(ps.ByName("ip"), w)
 }
 
-func geocode(ips string) []byte {
+func geocode(ips string, writer io.Writer) {
+	s := time.Now()
 	var locRecord record
+	var res Response
 	ip := net.ParseIP(ips)
-	_ = file.Lookup(ip, &locRecord)
-	res := Response{locRecord.Location.Latitude, locRecord.Location.Longitude, locRecord.Country.IsoCode, locRecord.Location.TimeZone}
+	if ip != nil {
+		_ = file.Lookup(ip, &locRecord)
+		res = Response{locRecord.Location.Latitude, locRecord.Location.Longitude, locRecord.Country.IsoCode, locRecord.Location.TimeZone}
+	} else {
+		res = Response{0, 0, "", ""}
+	}
 	j, _ := json.Marshal(res)
-	return j
+	if w, ok := writer.(http.ResponseWriter); ok {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, string(j))
+	} else {
+		fmt.Fprintf(writer, string(j))
+	}
+	log.Printf("\n - GET %v - total=%v", ip, time.Since(s))
 }
 
 func initialize() {
